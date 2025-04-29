@@ -1,0 +1,10 @@
+flask
+crewai
+python-dotenv
+google-generativeai
+paramiko
+pyyaml
+requests
+langchain
+langtrace-python-sdk
+pydantic

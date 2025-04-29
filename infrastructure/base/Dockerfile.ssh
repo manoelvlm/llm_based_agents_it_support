@@ -1,0 +1,38 @@
+FROM debian:bullseye-slim
+
+# Instalar OpenSSH Server e utilitários
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    sudo \
+    procps \
+    net-tools \
+    iputils-ping \
+    curl \
+    wget \
+    vim \
+    jq \
+    lsof \
+    netcat-openbsd \
+    psmisc \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configurar usuário de diagnóstico com senha
+RUN useradd -m -d /home/manoel -s /bin/bash manoel && \
+    echo "manoel:Uai6orfGYdKWbif" | chpasswd && \
+    adduser manoel sudo && \
+    echo "manoel ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/manoel
+
+# Configurar SSH
+RUN mkdir -p /var/run/sshd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Expor porta SSH
+EXPOSE 22
+
+# Script para iniciar o SSH junto com o serviço principal
+COPY infrastructure/base/start-ssh.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/start-ssh.sh
+
+CMD ["/usr/local/bin/start-ssh.sh"]

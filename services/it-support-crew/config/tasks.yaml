@@ -1,0 +1,246 @@
+# ===== Tarefas de Nível 1 =====
+l1_triage_alert:
+  description: >
+    As a Level 1 Support Agent, quickly triage the incoming resource utilization alert:
+    
+    1. IDENTIFY the main resource issue in ONE SENTENCE (CPU, memory, or both)
+    2. DETERMINE current system load (high, critical, extreme)
+    3. ASSIGN severity based on resource utilization:
+       - CRITICAL: Multiple resources >90% (system barely responding)
+       - HIGH: Single resource >80% (significant performance impact)
+       - MEDIUM: Resources between 70-80% (noticeable performance impact)
+       - LOW: Resources slightly elevated but <70% (minimal impact)
+    4. USE the UserServiceMetricsTool with endpoint='alerts' to check if Prometheus has any active alerts
+       related to CPU or memory consumption.
+    
+    DO NOT spend time on detailed process analysis yet - focus on quick resource assessment.
+    
+    Alert details: {input}
+  expected_output: >
+    A brief triage report containing:
+    - One-sentence resource utilization summary
+    - Current system load assessment
+    - Severity level (Critical/High/Medium/Low) with clear justification
+    - Initial hypothesis of potential cause (1-2 sentences maximum)
+
+l1_basic_process_survey:
+  description: >
+    Conduct an initial survey of system processes to identify unusual resource usage:
+    
+    1. USE the SSHDiagnosticTool to access the container
+    2. USE UserServiceMetricsTool with endpoint='alarms' to check the current alarms
+    3. RUN these focused resource commands:
+       - Execute 'ps aux --sort=-%cpu | head -10' for top CPU-consuming processes
+       - Execute 'ps aux --sort=-%mem | head -10' for top memory-consuming processes
+       - Check overall system load with 'uptime' for 1, 5, and 15-minute load averages
+    4. REPORT only the top 3-5 highest resource consumers with their exact usage percentages
+    
+    Focus only on identifying the top resource consumers at this stage.
+    DO NOT attempt to categorize or terminate any processes yet.
+  expected_output: >
+    A concise process report containing:
+    - System load averages
+    - List of top 3-5 resource-consuming processes with exact CPU/MEM percentages
+    - Any immediately suspicious or unusual processes highlighted
+    - Initial assessment of whether this appears to be an application-related or unrelated process issue
+    - Clear recommendation for Level 2 investigation
+
+# ===== Tarefas de Nível 2 =====
+l2_process_identification:
+  description: >
+    As a Level 2 Agent, identify all high-resource processes and categorize them:
+    
+    1. USE the SSHDiagnosticTool to access the container
+    2. RUN these targeted resource commands:
+       - 'ps aux --sort=-%cpu | head -15' for CPU-intensive processes
+       - 'ps aux --sort=-%mem | head -15' for memory-intensive processes
+       - 'top -b -n 2 -d 1 | grep -A 15 "PID"' for real-time CPU utilization
+       - 'free -m' to check overall memory utilization
+    3. CATEGORIZE using the following criteria:
+       - CRITICAL: Known application processes (node, python, java, nginx, mysql, mongodb, redis)
+       - SUPPORTING: System services (ssh, cron, syslog, systemd)
+       - UNRELATED: Any process not matching the above and using >10% resources
+    4. FOR suspicious processes, use:
+       - 'ps -eo pid,ppid,%cpu,%mem,start_time,cmd | grep [process-name]' for process details with runtime
+    
+    Only escalate to Level 3 when you've identified clearly UNRELATED processes consuming significant resources.
+  expected_output: >
+    A structured process report with:
+    - Table of high-resource processes containing:
+      * Process name, PID, CPU%, MEM%
+      * Category (CRITICAL/SUPPORTING/UNRELATED)
+      * Start time
+    - Clear list of processes recommended for Level 3 investigation
+    - Specific justification for each categorization
+
+# ===== Tarefas de Nível 3 =====
+l3_resource_intensive_process_analysis:
+  description: >
+    Perform deep analysis of resource-intensive unrelated processes:
+    
+    1. USE the SSHDiagnosticTool to access the container
+    2. FOR each process identified as potentially unrelated:
+       - Get detailed info: 'ps -p [PID] -o pid,ppid,user,%cpu,%mem,etime,start_time,cmd --no-headers'
+       - Check open files: 'lsof -p [PID]'
+           3. ANALYZE specific behavior patterns:
+       - Is it consuming an abnormal amount of resources?
+       - Does it match known malicious patterns?
+       - Is it running from an unusual location?
+       - Was it started at an unusual time?
+    4. DEFINITIVELY DETERMINE if each process:
+       - Is safe to terminate (UNRELATED)
+       - Must be preserved (CRITICAL/SUPPORTING)
+       - Requires further analysis before decision (UNCERTAIN)
+    
+    BE EXTREMELY CAUTIOUS: Only mark processes as safe to terminate if you have conclusive evidence they are unrelated.
+    
+    IMPORTANT: When using process termination commands (pkill, kill, etc.), successful execution typically produces NO output.
+    If there is no error message after executing a termination command, the agent should interpret this as a SUCCESSFUL termination.
+    Always verify termination success using verification commands like 'pgrep' or 'top' to confirm the process is no longer running.
+  expected_output: >
+    A definitive process analysis report:
+    - Detailed analysis of each resource-intensive unrelated process with:
+      * Process details (PID, owner, command, arguments)
+      * Resource consumption patterns
+      * Open files and network connections
+      * Start time and run duration
+    - Clear classification of each process as:
+      * SAFE-TO-TERMINATE (with justification)
+      * MUST-PRESERVE (with justification)
+      * UNCERTAIN (with specific concerns)
+    - Risk assessment for terminating each identified process
+    - Final list of processes recommended for termination
+
+l3_process_termination_plan:
+  description: >
+    Create a safe termination plan for identified unrelated processes:
+    
+    1. PRIORITIZE processes for termination based on:
+       - Resource consumption (highest first)
+       - Confidence in "unrelated" classification (most confident first)
+       - Risk level (lowest risk first)
+    2. DEVELOP a step-by-step termination plan:
+       - Order of termination
+       - Command to use for each termination: 'sudo pkill [process-name]' or 'sudo pkill -f [pattern]' for pattern matching
+       - NEVER use PID-based termination as PIDs can change; always use process names
+       - If a process has multiple instances, use distinguishing patterns with 'sudo pkill -f [unique-pattern]'
+       - Monitoring steps between terminations
+    3. INCLUDE verification steps after each termination:
+       - Run 'top -b -n 1' and scan the output to verify the process is no longer present
+       - Run 'pgrep [process-name]' to verify the process is gone (should return nothing)
+       - Confirm resource utilization has improved by comparing before/after top output
+    4. IDENTIFY potential risks and mitigation strategies:
+       - System impact assessment
+       - Rollback plan if issues occur
+       - Verification steps after each termination
+    
+    This plan must ONLY include processes conclusively identified as unrelated to the application.
+    ALWAYS use process names with 'sudo pkill' instead of PIDs which can change between checks.
+  expected_output: >
+    A process termination plan containing:
+    - Prioritized list of processes to terminate
+    - For each process:
+      * Exact termination command to use (using sudo pkill with process name)
+      * Resource usage before termination
+      * Verification method using top to confirm termination
+    - Risk assessment and mitigation strategies
+    - Monitoring approach to ensure application stability
+    - Rollback plan if unexpected issues occur
+
+l3_process_termination_execution:
+  description: >
+    Execute the termination plan for identified unrelated processes:
+    
+    1. USE the SSHDiagnosticTool to access the container
+    2. EXECUTE the termination commands from the plan:
+       - Follow the prioritized order from the termination plan
+       - Execute each termination command exactly as specified
+       - Wait briefly between each termination to observe system response
+    3. AFTER EACH termination:
+       - Verify the process was successfully terminated with 'pgrep [process-name]'
+       - Check system resource usage with 'top -b -n 1 | head -10'
+       - Document any immediate changes in resource utilization
+    4. IF any termination fails:
+       - Try an alternative termination method (e.g., 'sudo kill -9 $(pgrep [process-name])')
+       - Document the failure and alternative action taken
+    5. MAINTAIN a real-time log of all actions and system responses
+    
+    IMPORTANT: When using process termination commands (pkill, kill, etc.), successful execution typically produces NO output.
+    If there is no error message after executing a termination command, interpret this as a SUCCESSFUL termination.
+    Always verify using 'pgrep' or 'top' to confirm the process is no longer running.
+  expected_output: >
+    A detailed execution report containing:
+    - List of all termination commands executed
+    - For each terminated process:
+      * Confirmation of successful termination
+      * Before/after resource utilization
+      * Any system responses or unexpected behavior
+    - Any failed termination attempts and subsequent actions
+    - Summary of resource improvement achieved
+    - Current system state after all terminations
+
+l3_post_termination_verification:
+  description: >
+    Verify system stability and resource utilization after process terminations:
+    
+    1. USE the SSHDiagnosticTool to access the container
+    2. VERIFY current system resource status:
+       - Run 'top -b -n 1 | head -20' to check current process list
+       - Check CPU and memory usage has improved
+    3. CONFIRM all terminated processes are no longer running:
+       - For each terminated process name: 'pgrep [process-name]' should return nothing
+    4. VERIFY application functionality using UserServiceMetricsTool:
+       - Check 'http://localhost:5001/health' returns OK
+       - Use UserServiceMetricsTool with endpoint='alarms' to check for any new issues
+    5. COMPARE before/after metrics:
+       - Overall CPU utilization
+       - Overall memory utilization
+       - Application performance/response times
+    
+    Document all findings with specific metrics and evidence.
+  expected_output: >
+    A comprehensive verification report:
+    - Current system resource utilization with specific numbers
+    - Confirmation that terminated processes are no longer present
+    - Before/after comparison showing improvement in:
+      * CPU utilization (% decrease)
+      * Memory utilization (% decrease)
+      * Application performance metrics
+    - Any remaining resource issues or concerns
+    - Assessment of whether the intervention was successful
+    - Recommendations for ongoing monitoring
+
+# ===== Tarefa de análise e criação de documentação =====
+support_document_process_management:
+  description: >
+    Create comprehensive documentation of the entire process management intervention:
+    
+    1. COMPILE a complete timeline of events:
+       - Initial alert and resource issue identification
+       - Process discovery and categorization steps
+       - Termination planning and execution details
+       - Post-termination verification
+    2. DOCUMENT all actions taken with specific details:
+       - Processes that were identified and analyzed
+       - Termination commands that were executed
+       - System responses to each intervention
+    3. ANALYZE the effectiveness of the intervention:
+       - Resource utilization improvement
+       - System stability assessment
+       - Application performance impact
+    4. PROVIDE recommendations for future prevention:
+       - Process monitoring improvements
+       - Automated detection of resource-intensive processes
+       - System resource allocation optimization
+    
+    ENSURE all documentation is factual, precise, and based solely on the actual steps taken.
+  expected_output: >
+    A comprehensive process management report containing:
+    - Executive summary with key metrics and outcomes
+    - Detailed timeline of the entire intervention
+    - Process-by-process documentation of all terminations
+    - Before/after resource utilization metrics with specific numbers
+    - Technical analysis of root causes for resource issues
+    - Recommendations for preventing similar issues
+    - Risk assessment and lessons learned
+  output_file: process_management_report.md

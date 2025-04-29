@@ -1,0 +1,5 @@
+Host user-service
+    HostName user-service
+    User manoel
+    IdentityFile /root/.ssh/id_rsa
+    StrictHostKeyChecking no

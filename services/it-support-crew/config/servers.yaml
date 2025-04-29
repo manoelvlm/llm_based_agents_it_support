@@ -1,0 +1,37 @@
+servers:
+  user-service:
+    hostname: user-service
+    port: 22
+    username: user
+    password: "password"
+    description: 
+      "Docker containerized microservices environment. 
+      The user-service container runs on port 5000 (externally mapped to 5001) with SSH access on port 22 (mapped to 2222)
+      The environment consists of: 
+        - PostgreSQL database
+        - Redis cache
+        - RabbitMQ message broker
+        - Observability stack with Prometheus"
+    ssh_port: 2222
+    tools_available:
+      - ps
+      - top
+      - netstat
+      - lsof
+      - curl
+      - wget
+      - nc
+      - jq
+      - psql
+      - pkill
+    tools_unavailable:
+      - ping
+      - tcdump
+    monitoring_endpoints:
+      - microservice_health: http://localhost:5001/health
+      - microservice metrics: http://localhost:5001/metrics
+      - current_alerts_from_prometheus: http://localhost:9090/api/v1/alerts
+    log_paths:
+      - /app/access.log
+      - /app/app.log
+      - /app/error.log

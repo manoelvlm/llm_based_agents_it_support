@@ -1,0 +1,96 @@
+groups:
+- name: all-alerts
+  rules:
+  - alert: CriticalCPUSaturation
+    expr: |
+      avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[30s]) * 100) < 20
+    for: 30s
+    labels:
+      severity: critical
+      component: infrastructure
+      priority: P1
+    annotations:
+      description: |-
+        Uso extremamente alto de CPU em {{ $labels.instance }}
+        CPU idle em apenas {{ printf "%.1f%%" $value }}
+      summary: "CPU criticamente sobrecarregada em {{ $labels.instance }}"
+
+  - alert: RapidMemoryIncrease
+    expr: |
+      (rate(process_resident_memory_bytes{job=~".*service"}[1m]) * 60 / 1048576) > 20
+    for: 90s
+    labels:
+      severity: critical
+      component: infrastructure
+      priority: P1
+    annotations:
+      description: |-
+        Aumento anormal de memória em {{ $labels.instance }}
+        Processo {{ $labels.job }} aumentando {{ printf "%.2f MB/min" $value }}
+      summary: "Possível memory leak em {{ $labels.instance }}"
+
+  - alert: CPUUsageHigh
+    expr: |
+      100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[30s])) * 100) > 85
+    for: 90s
+    labels:
+      severity: warning
+      component: infrastructure
+      priority: P2
+    annotations:
+      description: |-
+        Alto uso de CPU em {{ $labels.instance }}: {{ printf "%.1f%%" $value }}
+      summary: "Alto uso de CPU em {{ $labels.instance }}"
+
+  - alert: CPUUsageCritical
+    expr: |
+      100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[30s])) * 100) > 95
+    for: 30s
+    labels:
+      severity: critical
+      component: infrastructure
+      priority: P1
+    annotations:
+      description: |-
+        Uso crítico de CPU em {{ $labels.instance }}: {{ printf "%.1f%%" $value }}
+      summary: "Uso crítico de CPU em {{ $labels.instance }}"
+
+  - alert: MemoryPressure
+    expr: |
+      (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 80
+    for: 90s
+    labels:
+      severity: warning
+      component: infrastructure
+      priority: P2
+    annotations:
+      description: |-
+        Pressão de memória em {{ $labels.instance }}: {{ printf "%.1f%%" $value }}
+      summary: "Pressão de memória em {{ $labels.instance }}"
+
+  - alert: MemoryCritical
+    expr: |
+      (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+    for: 30s
+    labels:
+      severity: critical
+      component: infrastructure
+      priority: P1
+    annotations:
+      description: |-
+        Uso crítico de memória em {{ $labels.instance }}: {{ printf "%.1f%%" $value }}
+      summary: "Uso crítico de memória em {{ $labels.instance }}"
+
+  - alert: AbnormalMemoryGrowth
+    expr: |
+      (rate(process_resident_memory_bytes{job=~".*service"}[2m]) * 60 / 1048576) > 5
+    for: 120s
+    labels:
+      severity: warning
+      component: infrastructure
+      priority: P2
+    annotations:
+      description: |-
+        Crescimento anormal de memória para {{ $labels.job }} em {{ $labels.instance }}
+        Taxa de crescimento: {{ printf "%.2f MB/min" $value }}
+      summary: "Crescimento anormal de memória em {{ $labels.job }}"

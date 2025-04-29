@@ -1,0 +1,195 @@
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db-data:
+  ssh-keys:
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - '9090:9090'
+      - '2223:22' # SSH port
+    volumes:
+      - ./infrastructure/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/observability/alerts.yml:/etc/prometheus/alerts.yml
+    networks:
+      - app-network
+    depends_on:
+      - user-service
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - '3000:3000'
+      - '2224:22' # SSH port
+    environment:
+      - GF_SECURITY_ADMIN_USER=username
+      - GF_SECURITY_ADMIN_PASSWORD=password
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - app-network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - '3100:3100'
+      - '2225:22' # SSH port
+    networks:
+      - app-network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./infrastructure/observability/promtail-config.yml:/etc/promtail/config.yml
+    user: '0:0'
+    networks:
+      - app-network
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://user:password@db:5432/users_db?sslmode=disable
+    networks:
+      - app-network
+
+  redis-exporter:
+    image: oliver006/redis_exporter
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    networks:
+      - app-network
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - '9093:9093'
+      - '2229:22' # SSH port
+    volumes:
+      - ./infrastructure/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    networks:
+      - app-network
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - '9100:9100'
+    networks:
+      - app-network
+
+  db:
+    build:
+      context: .
+      dockerfile: ./infrastructure/postgres/Dockerfile
+    container_name: postgres-db
+    environment:
+      - POSTGRES_USER=manoel
+      - POSTGRES_PASSWORD=Uai6orfGYdKWbif
+      - POSTGRES_DB=users_db
+    ports:
+      - '5432:5432'
+      - '2226:22' # SSH port
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  redis:
+    build:
+      context: .
+      dockerfile: ./infrastructure/redis/Dockerfile
+    container_name: redis
+    ports:
+      - '6379:6379'
+      - '2227:22' # SSH port
+    networks:
+      - app-network
+
+  rabbitmq:
+    build:
+      context: .
+      dockerfile: ./infrastructure/rabbitmq/Dockerfile
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 30s
+      retries: 10
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+      - '2228:22' # SSH port
+    networks:
+      - app-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./services/user-service/Dockerfile
+    container_name: user-service
+    ports:
+      - '5001:5000'
+      - '2222:22'
+    environment:
+      - SERVICE_NAME=UserService
+      - SERVICE_PORT=5000
+      - DATABASE_URL=postgresql://user:password@db:5432/users_db
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://user:password@rabbitmq:5672
+      - JWT_SECRET=your_jwt_secret
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - app-network
+    volumes:
+      - ssh-keys:/home/manoel/.ssh
+
+  failure-controller:
+    build:
+      context: .
+      dockerfile: ./services/failure_simulation/Dockerfile
+    container_name: failure-controller
+    ports:
+      - '5010:5010'
+      - '2230:22' # SSH port
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - user-service
+    networks:
+      - app-network
+
+  chaos_monkey:
+    build:
+      context: .
+      dockerfile: ./services/chaos_monkey/Dockerfile
+    container_name: chaos_monkey
+    ports:
+      - '2231:22' # SSH port
+    depends_on:
+      - failure-controller
+    networks:
+      - app-network
